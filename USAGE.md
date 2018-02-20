@@ -22,9 +22,11 @@ openssl req -new -sha256 -x509 -set_serial 1 -days 1000000 -config openssl-1.0.0
 # import crt, key to the Yubikey
 yubico-piv-tool --key=$key -a import-key -s 9c < root_ca.key
 yubico-piv-tool --key=$key -a import-certificate -s 9c < root_ca.crt
+```
 
-# copy cert to the keys directory
-cp root_ca.crt $KEY_DIR/ca.crt
+Initialize smartcard-ca (this will copy ca.crt from pkcs11 iface to the `keys` dir):
+```
+./build-ca
 ```
 
 Create test CSR
