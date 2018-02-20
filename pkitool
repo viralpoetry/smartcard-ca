@@ -402,7 +402,6 @@ if [ -d "$KEY_DIR" ] && [ "$KEY_CONFIG" ]; then
 
         # Load certificate into PKCS#11 token
         if [ $DO_P11 -eq 1 ]; then
-                echo "Using PKCS#11 token to sign certificate."
                 $OPENSSL x509 -in "$FN.crt" -inform PEM -out "$FN.crt.der" -outform DER && \
                   $PKCS11TOOL --module "$PKCS11_MODULE_PATH" --write-object "$FN.crt.der" --type cert \
                         --login --pin "$PKCS11_PIN" \
