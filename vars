@@ -22,7 +22,6 @@ export OPENSSL="openssl"
 export PKCS11TOOL="pkcs11-tool"
 export GREP="grep"
 
-
 # This variable should point to
 # the openssl.cnf file included
 # with easy-rsa.
@@ -40,10 +39,6 @@ export KEY_DIR="$EASY_RSA/keys"
 
 # Issue rm -rf warning
 echo NOTE: If you run ./clean-all, I will be doing a rm -rf on $KEY_DIR
-
-# PKCS11 fixes
-export PKCS11_MODULE_PATH="dummy"
-export PKCS11_PIN="dummy"
 
 # Increase this to 2048 if you
 # are paranoid.  This will slow
@@ -71,9 +66,18 @@ export KEY_OU="MyOrganizationalUnit"
 # X509 Subject Field
 export KEY_NAME="EasyRSA"
 
-# PKCS11 Smart Card
-# export PKCS11_MODULE_PATH="/usr/lib/changeme.so"
-# export PKCS11_PIN=1234
+# PKCS11 Smart Card (use URI or SLOT & ID, they are mutually exclusive)
+unset PKCS11_URI
+unset PKCS11_SLOT
+unset PKCS11_ID
+export PKCS11_DYNAMIC_PATH="/usr/lib/x86_64-linux-gnu/openssl-1.0.0/engines/pkcs11.so"
+export PKCS11_MODULE_PATH="/usr/lib/x86_64-linux-gnu/opensc-pkcs11.so"
+export OPENSSL_PREFIX=""
+export PKCS11_PIN=123456
+export PKCS11_SLOT=slot_0
+export PKCS11_ID=id_2
+# example uri format
+# export PKCS11_URI="pkcs11:model=PKCS%2315%20emulated;manufacturer=piv_II;serial=00000000;token=PIV%20Card%20Holder%20pin%20%28PIV_II%29;id=%02;object=SIGN%20key;type=private"
 
 # If you'd like to sign all keys with the same Common Name, uncomment the KEY_CN export below
 # You will also need to make sure your OpenVPN server config has the duplicate-cn option set

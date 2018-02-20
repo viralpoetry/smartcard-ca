@@ -276,11 +276,11 @@ authorityKeyIdentifier=keyid:always,issuer:always
 # And uncomment the following
 # verify that dynamic_path points to the correct location
 #
-#pkcs11 = pkcs11_section
+pkcs11 = pkcs11_section
 
 [ pkcs11_section ]
 engine_id = pkcs11
-dynamic_path = /usr/lib/engines/engine_pkcs11.so
+dynamic_path = $ENV::PKCS11_DYNAMIC_PATH
 MODULE_PATH = $ENV::PKCS11_MODULE_PATH
 PIN = $ENV::PKCS11_PIN
 init = 0

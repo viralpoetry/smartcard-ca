@@ -70,6 +70,8 @@ Options:
   --pass     : encrypt private key with password
   --csr      : only generate a CSR, do not sign
   --sign     : sign an existing CSR
+  --signinter     : sign an intermediate CA CSR
+  --signserver : sign TLS Web Server CSR
   --pkcs12   : generate a combined PKCS#12 file
   --pkcs11   : generate certificate on PKCS#11 token
       lib    : PKCS#11 library
@@ -151,9 +153,6 @@ NODES_REQ="-nodes"
 NODES_P12=""
 BATCH="-batch"
 CA="ca"
-# must be set or errors of openssl.cnf
-PKCS11_MODULE_PATH="dummy"
-PKCS11_PIN="dummy"
 
 # Process options
 while [ $# -gt 0 ]; do
@@ -169,6 +168,12 @@ while [ $# -gt 0 ]; do
         --pass     ) NODES_REQ="" ;;
         --csr      ) DO_CA="0" ;;
         --sign     ) DO_REQ="0" ;;
+        --signinter   ) CA_EXT="$CA_EXT -extensions v3_ca"
+		     DO_REQ="0" ;;
+	--signserver   ) REQ_EXT="$REQ_EXT -extensions server"
+                     DO_REQ="0"
+                     CA_EXT="$CA_EXT -extensions server" ;;
+
         --pkcs12   ) DO_P12="1" ;;
         --pkcs11   ) DO_P11="1"
                      PKCS11_MODULE_PATH="$2"
@@ -315,6 +320,7 @@ if [ $DEBUG -eq 1 ]; then
     echo PKCS11_MODULE_PATH $PKCS11_MODULE_PATH
     echo PKCS11_SLOT $PKCS11_SLOT
     echo PKCS11_ID $PKCS11_ID
+    echo PKCS11_URI $PKCS11_URI
     echo PKCS11_LABEL $PKCS11_LABEL
 fi
 
@@ -335,55 +341,74 @@ if [ -d "$KEY_DIR" ] && [ "$KEY_CONFIG" ]; then
 
     # Build root CA
     if [ $DO_ROOT -eq 1 ]; then
-        $OPENSSL req $BATCH -days $CA_EXPIRE $NODES_REQ -new -newkey rsa:$KEY_SIZE \
-            -x509 -keyout "$CA.key" -out "$CA.crt" -config "$KEY_CONFIG" && \
-            chmod 0600 "$CA.key"
+        # TODO: generate / verify CA key, crt with pkcs11
+        # $OPENSSL req $BATCH -days $CA_EXPIRE $NODES_REQ -new -newkey rsa:$KEY_SIZE \
+        #     -x509 -keyout "$CA.key" -out "$CA.crt" -config "$KEY_CONFIG" && \
+        #     chmod 0600 "$CA.key"
+        echo "Reading crt from the pkcs11 storage..."
+        # ";pin-value=$PKCS11_PIN/"
+        purl=`p11tool --provider ${PKCS11_MODULE_PATH} --list-tokens --no-detailed-url | awk '/URL:.*/{print $2}'`
+        pcrt=`p11tool --list-all "$purl;type=cert" | awk '/URL:.*/{print $2}'`
+        echo "Writing ca.crt..."
+        p11tool --export $pcrt > $KEY_DIR/ca.crt
     else
-        # Make sure CA key/cert is available
+        # Make sure CA cert is available
         if [ $DO_CA -eq 1 ] || [ $DO_P12 -eq 1 ]; then
-            if [ ! -r "$CA.crt" ] || [ ! -r "$CA.key" ]; then
-                echo "$PROGNAME: Need a readable $CA.crt and $CA.key in $KEY_DIR"
-                echo "Try $PROGNAME --initca to build a root certificate/key."
-                exit 1
+            if [ ! -r "$CA.crt" ]; then
+               echo "$PROGNAME: Need a readable $CA.crt in $KEY_DIR"
+               echo "Try $PROGNAME --initca to build a root certificate/key."
+               exit 1
             fi
         fi
 
         # Generate key for PKCS#11 token
         PKCS11_ARGS=
         if [ $DO_P11 -eq 1 ]; then
-                stty -echo
-                echo -n "User PIN: "
-                read -r PKCS11_PIN
-                stty echo
-                export PKCS11_PIN
+               stty -echo
+               echo -n "User PIN: "
+               read -r PKCS11_PIN
+               stty echo
+               export PKCS11_PIN
 
-                echo "Generating key pair on PKCS#11 token..."
-                $PKCS11TOOL --module "$PKCS11_MODULE_PATH" --keypairgen \
-                        --login --pin "$PKCS11_PIN" \
-                        --key-type rsa:1024 \
-                        --slot "$PKCS11_SLOT" --id "$PKCS11_ID" --label "$PKCS11_LABEL" || exit 1
-                PKCS11_ARGS="-engine pkcs11 -keyform engine -key $PKCS11_SLOT:$PKCS11_ID"
+               echo "Generating key pair on PKCS#11 token..."
+               $PKCS11TOOL --module "$PKCS11_MODULE_PATH" --keypairgen \
+                       --login --pin "$PKCS11_PIN" \
+                       --key-type rsa:2048 \
+                       --slot "$PKCS11_SLOT" --id "$PKCS11_ID" --label "$PKCS11_LABEL" || exit 1
+               PKCS11_ARGS="-engine pkcs11 -keyform engine -key $PKCS11_SLOT:$PKCS11_ID"
+        fi
+
+        # Make sure PKCS11 parameters are set
+        if [ -n "$PKCS11_URI" ]; then
+          echo "PKCS11 uri found, using..."
+          PKCS11_BLOB=\"$PKCS11_URI\"
+        elif [ -n "$PKCS11_SLOT" ] && [ -n "$PKCS11_ID" ]; then
+          echo "PKCS11 SLOT & ID found, using..."
+          PKCS11_BLOB=$PKCS11_SLOT-$PKCS11_ID
+        else
+          echo "PKCS11 parameters missing! Pleas set URI, or SLOT & ID parameters first."
+          exit 1;
         fi
 
         # Build cert/key
         ( [ $DO_REQ -eq 0 ] || $OPENSSL req $BATCH $NODES_REQ -new -newkey rsa:$KEY_SIZE \
                 -keyout "$FN.key" -out "$FN.csr" $REQ_EXT -config "$KEY_CONFIG" $PKCS11_ARGS ) && \
-            ( [ $DO_CA -eq 0 ]  || $OPENSSL ca $BATCH -days $KEY_EXPIRE -out "$FN.crt" \
-                -in "$FN.csr" $CA_EXT -config "$KEY_CONFIG" ) && \
-            ( [ $DO_P12 -eq 0 ] || $OPENSSL pkcs12 -export -inkey "$FN.key" \
+            ( [ $DO_CA -eq 0 ]  || $OPENSSL ca -engine pkcs11 -keyfile $PKCS11_BLOB $BATCH -days $KEY_EXPIRE -keyform e -in "$FN.csr" \
+	        -out "$FN.crt" $CA_EXT -noemailDN -config "$KEY_CONFIG" ) && \
+	    ( [ $DO_P12 -eq 0 ] || $OPENSSL pkcs12 -export -inkey "$FN.key" \
                 -in "$FN.crt" -certfile "$CA.crt" -out "$FN.p12" $NODES_P12 ) && \
             ( [ $DO_CA -eq 0 -o $DO_P11 -eq 1 ]  || chmod 0600 "$FN.key" ) && \
             ( [ $DO_P12 -eq 0 ] || chmod 0600 "$FN.p12" )
 
         # Load certificate into PKCS#11 token
         if [ $DO_P11 -eq 1 ]; then
+                echo "Using PKCS#11 token to sign certificate."
                 $OPENSSL x509 -in "$FN.crt" -inform PEM -out "$FN.crt.der" -outform DER && \
                   $PKCS11TOOL --module "$PKCS11_MODULE_PATH" --write-object "$FN.crt.der" --type cert \
                         --login --pin "$PKCS11_PIN" \
                         --slot "$PKCS11_SLOT" --id "$PKCS11_ID" --label "$PKCS11_LABEL"
                 [ -e "$FN.crt.der" ]; rm "$FN.crt.der"
         fi
-
     fi
 
 # Need definitions
