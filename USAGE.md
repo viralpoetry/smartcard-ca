@@ -17,7 +17,7 @@ openssl genrsa -out root_ca.key 2048
 openssl req -sha256 -new -config openssl-1.0.0.cnf -key root_ca.key -nodes -out root_ca.csr
 
 # generate self-signed CRT
-openssl req -new -sha256 -x509 -set_serial 1 -days 1000000 -config openssl-1.0.0.cnf -key root_ca.key -out root_ca.crt
+openssl req -new -sha256 -x509 -set_serial 1 -days 10000 -config openssl-1.0.0.cnf -key root_ca.key -out root_ca.crt
 
 # import crt, key to the Yubikey
 yubico-piv-tool --key=$key -a import-key -s 9c < root_ca.key
